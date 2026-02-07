@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Breakout Deluxe</title>
+<style>
+  body {
+    margin: 0;
+    background: #0f172a;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+
+  canvas {
+    background: #020617;
+    border: 3px solid #38bdf8;
+    touch-action: none;
+  }
+
+  /* Game Over Overlay */
+  #overlay {
+    position: absolute;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    color: white;
+    font-family: Arial, sans-serif;
+  }
+
+  button {
+    padding: 10px 20px;
+    font-size: 16px;
+    background: #22d3ee;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #38bdf8;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="480" height="320"></canvas>
+
+<div id="overlay">
+  <h2>Game Over 💀</h2>
+  <button onclick="retry()">Retry</button>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
+
+/* ---------- Sounds ---------- */
+const bounceSound = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-arcade-jump-coin-216.wav");
+const brickSound  = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-explosion-hit-1704.wav");
+const powerSound  = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-bonus-earned-in-video-game-2058.wav");
+
+/* ---------- Game State ---------- */
+let running = true;
+
+/* ---------- Game Variables ---------- */
+let level = 1;
+let score = 0;
+
+let ball, paddle;
+let right = false;
+let left = false;
+
+let brickRows = 4;
+let brickCols = 6;
+const brickW = 60;
+const brickH = 20;
+const padding = 10;
+const offsetTop = 40;
+const offsetLeft = 30;
+
+let bricks = [];
+let powerUps = [];
+
+/* ---------- Init ---------- */
+function init() {
+  running = true;
+  overlay.style.display = "none";
+
+  level = 1;
+  score = 0;
+  brickRows = 4;
+  powerUps = [];
+
+  ball = { x: canvas.width/2, y: canvas.height-40, dx: 3, dy: -3, r: 8 };
+  paddle = { w: 80, h: 12, x: canvas.width/2 - 40 };
+
+  createBricks();
+}
+
+function retry() {
+  init();
+  update();
+}
+
+/* ---------- Bricks ---------- */
+function createBricks() {
+  bricks = [];
+  for (let c = 0; c < brickCols; c++) {
+    bricks[c] = [];
+    for (let r = 0; r < brickRows; r++) {
+      bricks[c][r] = { x: 0, y: 0, alive: true };
+    }
+  }
+}
+
+/* ---------- Controls ---------- */
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") right = true;
+  if (e.key === "ArrowLeft") left = true;
+});
+document.addEventListener("keyup", e => {
+  if (e.key === "ArrowRight") right = false;
+  if (e.key === "ArrowLeft") left = false;
+});
+
+canvas.addEventListener("touchmove", e => {
+  const rect = canvas.getBoundingClientRect();
+  paddle.x = e.touches[0].clientX - rect.left - paddle.w/2;
+});
+
+/* ---------- Power Ups ---------- */
+function spawnPowerUp(x, y) {
+  powerUps.push({ x, y, active: true });
+}
+
+/* ---------- Draw ---------- */
+function drawBall() {
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fillStyle = "#22d3ee";
+  ctx.fill();
+}
+
+function drawPaddle() {
+  ctx.fillStyle = "#f43f5e";
+  ctx.fillRect(paddle.x, canvas.height - paddle.h, paddle.w, paddle.h);
+}
+
+function drawBricks() {
+  for (let c = 0; c < brickCols; c++) {
+    for (let r = 0; r < brickRows; r++) {
+      let b = bricks[c][r];
+      if (b.alive) {
+        b.x = c * (brickW + padding) + offsetLeft;
+        b.y = r * (brickH + padding) + offsetTop;
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(b.x, b.y, brickW, brickH);
+      }
+    }
+  }
+}
+
+function drawUI() {
+  ctx.fillStyle = "#fff";
+  ctx.fillText("Score: " + score, 8, 20);
+  ctx.fillText("Level: " + level, canvas.width - 70, 20);
+}
+
+function drawPowerUps() {
+  powerUps.forEach(p => {
+    if (p.active) {
+      ctx.fillStyle = "#4ade80";
+      ctx.fillRect(p.x, p.y, 15, 15);
+      p.y += 2;
+
+      if (p.y > canvas.height - paddle.h &&
+          p.x > paddle.x &&
+          p.x < paddle.x + paddle.w) {
+        powerSound.play();
+        paddle.w += 30;
+        setTimeout(() => paddle.w -= 30, 5000);
+        p.active = false;
+      }
+    }
+  });
+}
+
+/* ---------- Collisions ---------- */
+function collisions() {
+  for (let c = 0; c < brickCols; c++) {
+    for (let r = 0; r < brickRows; r++) {
+      let b = bricks[c][r];
+      if (b.alive &&
+          ball.x > b.x && ball.x < b.x + brickW &&
+          ball.y > b.y && ball.y < b.y + brickH) {
+        ball.dy *= -1;
+        b.alive = false;
+        score += 10;
+        brickSound.play();
+        if (Math.random() < 0.3) spawnPowerUp(b.x, b.y);
+      }
+    }
+  }
+}
+
+/* ---------- Game Loop ---------- */
+function update() {
+  if (!running) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawBall();
+  drawPaddle();
+  drawBricks();
+  drawUI();
+  drawPowerUps();
+  collisions();
+
+  if (ball.x + ball.dx > canvas.width || ball.x + ball.dx < 0) ball.dx *= -1;
+  if (ball.y + ball.dy < 0) ball.dy *= -1;
+
+  if (ball.y + ball.dy > canvas.height - paddle.h &&
+      ball.x > paddle.x &&
+      ball.x < paddle.x + paddle.w) {
+    ball.dy *= -1;
+    bounceSound.play();
+  }
+
+  if (ball.y > canvas.height) {
+    running = false;
+    overlay.style.display = "flex";
+    return;
+  }
+
+  if (right && paddle.x < canvas.width - paddle.w) paddle.x += 6;
+  if (left && paddle.x > 0) paddle.x -= 6;
+
+  ball.x += ball.dx;
+  ball.y += ball.dy;
+
+  if (bricks.flat().every(b => !b.alive)) {
+    level++;
+    brickRows++;
+    ball.dx *= 1.2;
+    ball.dy *= 1.2;
+    createBricks();
+  }
+
+  requestAnimationFrame(update);
+}
+
+init();
+update();
+</script>
+
+<marquee style="
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: #020617;
+  color: #38bdf8;
+  padding: 6px 0;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+">
+  🎮 Game Developed by: Muzammil Shakeel | 📧 muzammilshakeel80@gmail.com
+</marquee>
+
+</body>
+</html>
